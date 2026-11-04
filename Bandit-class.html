@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Two-Armed Bandit Classroom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: phone = one full-height play card; dashboard = controls strip, then two-column analysis grid that stacks on narrow screens */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --ink:#18212b; --muted:#5d6b78; --line:#d9dfe5;
+  --armA:#2563a8; --armB:#c2572b; --gold:#d79b14; --good:#2f7d4f; --bad:#b23a3a;
+  --soft:#e8edf2;
+  --m1:#2563a8; --m2:#6b46c1; --m3:#2f7d4f; --m4:#c2572b;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#10161d; --surface:#18212b; --ink:#e7edf3; --muted:#93a2b1; --line:#2a3644;
+  --armA:#5b9be0; --armB:#e7804f; --gold:#f0bb3c; --good:#5cb882; --bad:#e06a6a; --soft:#1f2a36; --m1:#5b9be0; --m2:#a58cf0; --m3:#5cb882; --m4:#ec8a5a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10161d; --surface:#18212b; --ink:#e7edf3; --muted:#93a2b1; --line:#2a3644;
+  --armA:#5b9be0; --armB:#e7804f; --gold:#f0bb3c; --good:#5cb882; --bad:#e06a6a; --soft:#1f2a36; --m1:#5b9be0; --m2:#a58cf0; --m3:#5cb882; --m4:#ec8a5a; color-scheme:dark}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+img{max-width:100%}
+html,body{background:var(--bg);color:var(--ink)}
+body{margin:0;font-family:var(--body);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 32px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.1}
+h1{font-size:1.7rem;font-weight:800;letter-spacing:-.01em}
+h2{font-size:1.15rem;font-weight:600}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:.5rem .9rem;font-weight:500}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:default}
+nav.top{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1180px;margin:0 auto 14px}
+nav.top a{color:var(--muted);font-size:.85rem}
+.wrap{max-width:1180px;margin:0 auto}
+
+/* ---------- student ---------- */
+#play{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.hud{display:flex;justify-content:space-between;align-items:end;gap:12px}
+.score{font-family:var(--display);font-weight:800;font-size:2.6rem;line-height:1;color:var(--gold)}
+.progress{height:6px;background:var(--soft);border-radius:3px;overflow:hidden}
+.progress>i{display:block;height:100%;background:var(--ink);width:0;transition:width .2s}
+.arms{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.arm{border:none;border-radius:18px;aspect-ratio:3/4;max-width:100%;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-family:var(--display);font-weight:800;font-size:1.6rem;position:relative;overflow:hidden;transition:transform .08s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.arm small{font-family:var(--mono);font-weight:400;font-size:.75rem;opacity:.85;letter-spacing:.06em}
+.arm.a{background:var(--armA)} .arm.b{background:var(--armB)}
+.arm:active:not(:disabled){transform:scale(.97)}
+.arm:disabled{cursor:default}
+.arm .glyph{width:64px;height:64px}
+.arm.dim{opacity:.4}
+.flash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2.4rem;background:rgba(0,0,0,.18)}
+.history{display:flex;flex-wrap:wrap;gap:3px;min-height:14px}
+.history i{width:9px;height:9px;border-radius:2px;display:block}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field input,.field select{border:1px solid var(--line);border-radius:8px;padding:.55rem .7rem;background:var(--bg)}
+.code{font-family:var(--mono);word-break:break-all;background:var(--soft);padding:10px;border-radius:8px;font-size:.85rem}
+.sync{font-size:.78rem}
+.sync b{font-weight:500}
+
+/* ---------- instructor ---------- */
+#teach{display:flex;flex-direction:column;gap:18px}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.controls .field{min-width:110px}
+.controls .field input{width:100px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat .v{font-family:var(--display);font-weight:800;font-size:1.9rem;line-height:1.1}
+.grid2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.panel{display:flex;flex-direction:column;gap:10px;min-width:0}
+svg text{fill:var(--muted);font-family:var(--mono);font-size:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);border-radius:99px;padding:.2rem .65rem;font-size:.8rem;background:var(--surface);display:inline-flex;gap:6px;align-items:center}
+.chip[aria-pressed="true"]{border-color:var(--ink);font-weight:600}
+.chip .sw{width:10px;height:3px;border-radius:2px;display:inline-block}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{text-align:left;padding:.45rem .5rem;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:400}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:.1rem .5rem;border-radius:99px;font-size:.75rem;font-weight:600}
+.p-q{background:color-mix(in srgb,var(--armA) 18%,transparent);color:var(--armA)}
+.p-w{background:color-mix(in srgb,var(--armB) 20%,transparent);color:var(--armB)}
+.p-r{background:var(--soft);color:var(--muted)}
+.p-n{background:transparent;color:var(--muted);border:1px dashed var(--line)}
+.explain{font-size:.88rem;max-width:68ch}
+.explain dt{font-weight:600}
+.explain dd{margin:0 0 .5rem}
+textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-family:var(--mono);font-size:.8rem;padding:8px;box-sizing:border-box}
+details summary{cursor:pointer;font-weight:500}
+.banner{border-left:3px solid var(--gold);padding:8px 12px;background:var(--surface);border-radius:4px;font-size:.88rem}
+#qrOverlay{position:fixed;inset:0;background:color-mix(in srgb,var(--bg) 92%,transparent);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.qrbox{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:min(560px,100%)}
+#qr{background:#fff;padding:14px;border-radius:8px;line-height:0}
+#qr img,#qr canvas{width:min(380px,70vw);height:auto;image-rendering:pixelated}
+.live{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.78rem;border:1px solid var(--line);border-radius:99px;padding:.25rem .75rem;background:var(--surface);white-space:nowrap}
+.live i{width:10px;height:10px;border-radius:50%;background:var(--muted);position:relative;display:block;flex:none}
+.live[data-state="live"] i{background:var(--good)}
+.live[data-state="wait"] i{background:var(--gold)}
+.live[data-state="down"] i{background:var(--bad)}
+.live[data-state="live"] b{color:var(--good);font-weight:500}
+.live i.ping::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid var(--good);animation:ping .9s ease-out forwards}
+@keyframes ping{from{transform:scale(.5);opacity:1}to{transform:scale(1.8);opacity:0}}
+.pill{white-space:nowrap}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+
+<nav class="top">
+  <span class="eyebrow">Two-armed bandit</span>
+  <span style="display:flex;gap:14px"><a href="#play">Player</a><a href="#teach">Instructor</a></span>
+</nav>
+
+<!-- ================= STUDENT VIEW ================= -->
+<section id="play" hidden>
+  <div id="joinCard" class="card" style="display:flex;flex-direction:column;gap:14px">
+    <h1>Pick a machine. Win coins.</h1>
+    <p class="muted" style="margin:0">Two machines pay out with different, hidden chances. Those chances may change partway through. Collect as many coins as you can.</p>
+    <div class="field"><label for="nick" class="eyebrow">Nickname</label><input id="nick" maxlength="20" placeholder="e.g. Rat #7" autocomplete="off"></div>
+    <button id="startBtn" class="btn primary" style="padding:.8rem">Start</button>
+    <p id="joinSync" class="sync muted" style="margin:0"></p>
+  </div>
+
+  <div id="gameArea" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div class="hud">
+      <div><div class="eyebrow">Coins</div><div class="score mono" id="score">0</div></div>
+      <div style="text-align:right"><div class="eyebrow">Trial</div><div class="mono" id="trialLbl" style="font-size:1.2rem">1 / 60</div></div>
+    </div>
+    <div class="progress"><i id="prog"></i></div>
+    <div class="arms">
+      <button class="arm a" id="armA" aria-label="Machine A"><svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="22" fill="none" stroke="#fff" stroke-width="5"/></svg>A<small>TAP</small></button>
+      <button class="arm b" id="armB" aria-label="Machine B"><svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="12" width="40" height="40" fill="none" stroke="#fff" stroke-width="5"/></svg>B<small>TAP</small></button>
+    </div>
+    <div class="history" id="hist" aria-label="Your choices so far"></div>
+    <p id="gameSync" class="sync muted" style="margin:0"></p>
+  </div>
+
+  <div id="endCard" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
+    <span class="eyebrow">Finished</span>
+    <h1 id="endScore">0 coins</h1>
+    <p id="endStyle" style="margin:0"></p>
+    <div id="codeBox" hidden style="display:flex;flex-direction:column;gap:6px">
+      <span class="eyebrow">Your results code</span>
+      <div class="code" id="codeTxt"></div>
+      <span class="muted" style="font-size:.82rem">Live sync isn't available on this device. Send this code to your instructor.</span>
+      <button class="btn" id="copyCode">Copy code</button>
+    </div>
+    <p id="endSync" class="sync muted" style="margin:0"></p>
+    <button class="btn" id="againBtn">Play again</button>
+  </div>
+</section>
+
+<!-- ================= INSTRUCTOR VIEW ================= -->
+<div id="qrOverlay" hidden role="dialog" aria-label="Join the game">
+  <div class="qrbox">
+    <span class="eyebrow">Scan to play</span>
+    <div id="qr"></div>
+    <div class="mono" id="qrUrl" style="word-break:break-all;font-size:1rem;text-align:center"></div>
+    <p class="muted" id="qrWarn" style="margin:0;font-size:.85rem;text-align:center"></p>
+    <button class="btn" id="qrClose">Close</button>
+  </div>
+</div>
+<section id="teach" class="wrap" hidden>
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:end">
+    <div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1>Class dashboard</h1><span class="live" id="live" data-state="off" aria-live="polite"><i id="liveDot"></i><span id="liveTxt">Offline</span></span></div><p class="muted" style="margin:.3rem 0 0" id="teachStatus">Connecting…</p></div>
+    <div class="chips">
+      <button class="btn primary" id="qrBtn">Show join QR</button>
+      <button class="btn" id="demoBtn">Preview with 24 simulated students</button>
+      <button class="btn" id="clearDemo" hidden>Clear preview</button>
+    </div>
+  </div>
+
+  <div class="card controls" id="cfgCard">
+    <div class="field"><label class="eyebrow" for="cfgN">Trials</label><input id="cfgN" type="number" min="10" max="200" value="30"></div>
+    <div class="field"><label class="eyebrow" for="cfgPA">P(win) good</label><input id="cfgPA" type="number" min="0" max="1" step="0.05" value="0.7"></div>
+    <div class="field"><label class="eyebrow" for="cfgPB">P(win) poor</label><input id="cfgPB" type="number" min="0" max="1" step="0.05" value="0.3"></div>
+    <div class="field"><label class="eyebrow" for="cfgRev">Reversal at trial</label><input id="cfgRev" type="number" min="0" max="200" value="15"><span class="muted" style="font-size:.72rem">0 = no reversal</span></div>
+    <button class="btn primary" id="newRound">Start new round</button>
+    <span class="muted" id="roundLbl" style="font-size:.85rem"></span>
+  </div>
+
+  <div class="stats">
+    <div class="card stat"><div class="eyebrow">Players</div><div class="v mono" id="sPlayers">0</div><div class="muted" id="sDone" style="font-size:.8rem"></div></div>
+    <div class="card stat"><div class="eyebrow">Mean reward rate</div><div class="v mono" id="sRate">–</div><div class="muted" style="font-size:.8rem" id="sRateCmp"></div></div>
+    <div class="card stat"><div class="eyebrow">Chose better machine</div><div class="v mono" id="sBest">–</div><div class="muted" style="font-size:.8rem">of all choices</div></div>
+    <div class="card stat"><div class="eyebrow">Best-fitting model</div><div class="v" id="sMix" style="font-size:1.05rem;font-family:var(--body);font-weight:600;padding-top:.5rem">–</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card panel">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><h2>Learning curve</h2><span class="eyebrow">P(choose better machine) by trial</span></div>
+      <svg id="curve" viewBox="0 0 620 300" style="width:100%;height:auto" role="img" aria-label="Learning curve"></svg>
+      <div class="chips" id="stratChips"></div>
+      <p class="muted" style="font-size:.8rem;margin:0">The thick line is your class (3-trial moving average). Colored lines are 2,000 simulated agents per model on the same task.</p>
+    </div>
+    <div class="card panel">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><h2>Win-stay / lose-shift map</h2><span class="eyebrow">one dot per student</span></div>
+      <svg id="wsls" viewBox="0 0 360 330" style="width:100%;height:auto" role="img" aria-label="Win-stay lose-shift scatter"></svg>
+      <div class="chips" id="dotKey"></div>
+      <p class="muted" style="font-size:.8rem;margin:0">Dot color = best-fitting model. Top-right = pure win-stay/lose-shift. Center = random. Right-bottom = sticks with a choice even after losses (a learned value, or perseveration).</p>
+    </div>
+  </div>
+
+  <div class="card panel">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><h2>Each student's approach</h2><span class="eyebrow">models refit live after every choice</span></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Player</th><th>Trials</th><th>Coins</th><th>Better %</th><th>P(stay|win)</th><th>P(shift|loss)</th><th>Best model</th><th>ΔBIC vs next</th><th>α learn rate</th><th>β inv. temp</th><th>κ persev.</th><th>η novelty</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="12" class="muted">No players yet. Share this page's link and have students open the Player view.</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-bottom:.6rem">What the numbers mean</h2>
+    <dl class="explain">
+      <dt>RL (Rescorla–Wagner / Q-learning)</dt><dd>Keeps a running value for each machine: Q ← Q + α·(reward − Q). The prediction error (reward − Q) drives learning. <b>α</b> is the learning rate: high α means the last few outcomes dominate. <b>β</b> is the inverse temperature of the softmax choice rule: low β means noisy, exploratory choices; high β means reliably picking the higher-valued machine. 2 parameters.</dd>
+      <dt>RL + perseveration</dt><dd>The same learner plus a pull toward repeating the previous choice, regardless of outcome: logit += <b>κ</b>·(1 if this was the last choice). κ &gt; 0 is “sticky” choice; κ &lt; 0 is a tendency to alternate. 3 parameters. Following Lau &amp; Glimcher (2005).</dd>
+      <dt>Bayes</dt><dd>An ideal observer that treats each machine as a coin with an unknown payout rate. It starts with a flat Beta(1,1) belief, counts wins and losses, and values each machine by its posterior mean. It assumes payouts never change, so after the reversal it switches only once the new evidence outweighs everything it saw before. Only <b>β</b> is free. 1 parameter.</dd>
+      <dt>Bayes + novelty</dt><dd>The Bayesian observer plus a bonus for the machine it knows least about: value = posterior mean + <b>η</b>·posterior SD. η &gt; 0 means directed exploration toward the less-sampled option; η &lt; 0 means sticking with the familiar one. 2 parameters. This is the uncertainty-bonus form used by Frank et al. (2009) and Badre et al. (2012).</dd>
+      <dt>Best model and ΔBIC</dt><dd>Each model is fit to each student by maximum likelihood (grid search) and scored with BIC = −2·log-likelihood + k·ln(trials). The lowest BIC wins. The k·ln(trials) penalty keeps richer models from winning just by being more flexible. ΔBIC is the gap to the runner-up: under 2 is weak evidence, over 6 is strong. “Chance-level” means a 0-parameter coin flip scores better than every model. Fits start after 10 trials.</dd>
+      <dt>Caution with 30 trials</dt><dd>With 30 choices, simulations show the fitting reliably separates the RL family from the Bayes family, but often can’t tell a model from its extended version. Read individual κ and η values as rough, and lean on class-level patterns. This is a good point to raise with students: model and parameter recovery depend on how much data you have (Wilson &amp; Collins, 2019).</dd>
+      <dt>References</dt><dd class="muted" style="font-size:.82rem">Lau &amp; Glimcher (2005) <i>J Exp Anal Behav</i> 84:555–579 · Frank, Doll, Oas-Terpstra &amp; Moreno (2009) <i>Nat Neurosci</i> 12:1062–1068 · Badre, Doll, Long &amp; Frank (2012) <i>Neuron</i> 73:595–607 · Wilson &amp; Collins (2019) <i>eLife</i> 8:e49547</dd>
+    </dl>
+
+  </div>
+
+  <details class="card">
+    <summary>Paste results codes from students who couldn't sync</summary>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+      <textarea id="pasteBox" placeholder="One code per line"></textarea>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn" id="addCodes">Add to dashboard</button><span class="muted" id="pasteMsg" style="font-size:.82rem"></span></div>
+    </div>
+  </details>
+</section>
+
+<!-- Firebase (live sync) and QR code generator. If these fail to load, the page still runs in offline mode. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+/* =====================================================================
+   SETUP: paste your Firebase web config here (see README.md).
+   Leave it empty to run in offline mode (game + simulated preview only).
+   ===================================================================== */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCsPYZOwOCrHzbLTlA5QUOA0cTwVUzFvFo",
+  authDomain: "bandit-class.firebaseapp.com",
+  databaseURL: "https://bandit-class-default-rtdb.firebaseio.com",
+  projectId: "bandit-class",
+  storageBucket: "bandit-class.firebasestorage.app",
+  messagingSenderId: "334118020383",
+  appId: "1:334118020383:web:c33a37023b503b34dd3c2a"
+};
+/* Optional: separate classes/sections by adding ?room=section2 to the link. */
+const ROOM = (new URLSearchParams(location.search).get('room') || 'main').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40) || 'main';
+
+/* ===================== shared math ===================== */
+const DEF={n:30,pA:0.7,pB:0.3,revAt:15,round:1};
+let cfg={...DEF};
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const betterArm=(good,t,revAt)=> (revAt>0 && t>=revAt) ? 1-good : good;
+
+/* ---------------------------------------------------------------------
+   The four learning models. Every model turns its internal state into
+   the log-odds of choosing machine B (arm 1) through a softmax:
+       P(B) = 1 / (1 + exp(-z))
+   RL               z = β·(Q_B − Q_A)
+                    after each outcome: Q_chosen ← Q_chosen + α·(reward − Q_chosen)
+   RL + persev.     z = β·(Q_B − Q_A) + κ·(+1 if last choice was B, −1 if A)
+                    κ > 0 = sticky (repeats choices), κ < 0 = alternates
+   Bayes            each machine has a Beta(a, b) belief about its payout rate,
+                    starting at Beta(1,1) (flat); a win adds 1 to a, a loss to b.
+                    z = β·(mean_B − mean_A), mean = a / (a + b)
+                    (an ideal observer that assumes payouts never change)
+   Bayes + novelty  z = β·[(mean_B + η·sd_B) − (mean_A + η·sd_A)]
+                    sd = posterior standard deviation, large for rarely tried
+                    machines. η > 0 = drawn to the less-known option
+                    (directed exploration), η < 0 = avoids it.
+   --------------------------------------------------------------------- */
+const MODELS=[
+  {id:'rl',     name:'RL',                 k:2, col:'var(--m1)', params:['alpha','beta']},
+  {id:'rlp',    name:'RL + perseveration', k:3, col:'var(--m2)', params:['alpha','beta','kappa']},
+  {id:'bayes',  name:'Bayes',              k:1, col:'var(--m3)', params:['beta']},
+  {id:'bayesn', name:'Bayes + novelty',    k:2, col:'var(--m4)', params:['beta','eta']},
+];
+const MODEL_BY_ID=Object.fromEntries(MODELS.map(m=>[m.id,m]));
+const newState=()=>({q:[.5,.5],a:[1,1],b:[1,1],prev:-1});
+const bMean=(st,i)=>st.a[i]/(st.a[i]+st.b[i]);
+const bSD=(st,i)=>{const A=st.a[i],B=st.b[i],S=A+B;return Math.sqrt(A*B/(S*S*(S+1)))};
+function logitB(id,st,P){
+  if(id==='rl')    return P.beta*(st.q[1]-st.q[0]);
+  if(id==='rlp')   return P.beta*(st.q[1]-st.q[0])+P.kappa*(st.prev===1?1:st.prev===0?-1:0);
+  if(id==='bayes') return P.beta*(bMean(st,1)-bMean(st,0));
+  /* bayesn */     return P.beta*((bMean(st,1)+P.eta*bSD(st,1))-(bMean(st,0)+P.eta*bSD(st,0)));
+}
+function learn(st,ch,rw,P){ st.q[ch]+=(P.alpha||0)*(rw-st.q[ch]); st.a[ch]+=rw; st.b[ch]+=1-rw; st.prev=ch; }
+
+/* --- maximum-likelihood fitting by grid search --- */
+const range=(a,b,s)=>{const o=[];for(let v=a;v<=b+1e-9;v+=s)o.push(+v.toFixed(4));return o};
+const GRID={alpha:range(.05,1,.05), beta:range(0,20,.5), kappa:range(-3,3,.25), eta:range(-3,3,.25)};
+
+// log P(choice) summed over trials for logit z_t = β·x_t + κ·s_t  (κ term optional)
+function sumLL(c,x,beta,s,kappa,n){
+  let ll=0;
+  for(let t=0;t<n;t++){
+    const z=beta*x[t]+(s?kappa*s[t]:0), u=c[t]?-z:z;      // log P = −softplus(u)
+    ll-= u>0 ? u+Math.log1p(Math.exp(-u)) : Math.log1p(Math.exp(u));
+  }
+  return ll;
+}
+function qDiffs(c,r,alpha,n,dq){
+  let q0=.5,q1=.5;
+  for(let t=0;t<n;t++){dq[t]=q1-q0; if(c[t]) q1+=alpha*(r[t]-q1); else q0+=alpha*(r[t]-q0);}
+  return dq;
+}
+function fitAll(c,r){
+  const n=c.length, out={};
+  const stick=new Float64Array(n);                 // +1 last choice B, −1 last choice A, 0 on trial 1
+  for(let t=1;t<n;t++) stick[t]=c[t-1]?1:-1;
+  const dm=new Float64Array(n), dsd=new Float64Array(n), mix=new Float64Array(n);
+  {const st=newState(); for(let t=0;t<n;t++){dm[t]=bMean(st,1)-bMean(st,0);dsd[t]=bSD(st,1)-bSD(st,0);learn(st,c[t],r[t],{});}}
+  const dq=new Float64Array(n);
+  // RL: full grid (α 0.05–1 by .05, β 0–20 by .5)
+  let bRL={ll:-Infinity};
+  for(const alpha of GRID.alpha){ qDiffs(c,r,alpha,n,dq);
+    for(const beta of GRID.beta){const ll=sumLL(c,dq,beta,null,0,n); if(ll>bRL.ll) bRL={ll,alpha,beta};}}
+  // RL + perseveration: coarse grid, then a finer grid around the best point
+  let bP={ll:-Infinity};
+  const scan=(As,Bs,Ks)=>{for(const alpha of As){ qDiffs(c,r,alpha,n,dq);
+    for(const beta of Bs) for(const kappa of Ks){const ll=sumLL(c,dq,beta,stick,kappa,n); if(ll>bP.ll) bP={ll,alpha,beta,kappa};}}};
+  scan(range(.1,1,.1),range(0,20,1),range(-3,3,.5));
+  const near=(v,h,lo,hi)=>range(-2,2,1).map(k=>+clamp(v+k*h,lo,hi).toFixed(4)).filter((x,i,a)=>a.indexOf(x)===i);
+  scan(near(bP.alpha,.025,.025,1),near(bP.beta,.25,0,20),near(bP.kappa,.125,-3,3));
+  // Bayes: β grid. Bayes + novelty: β × η grid
+  let bB={ll:-Infinity}, bN={ll:-Infinity};
+  for(const beta of GRID.beta){
+    const ll=sumLL(c,dm,beta,null,0,n); if(ll>bB.ll) bB={ll,beta};
+    for(const eta of GRID.eta){
+      for(let t=0;t<n;t++) mix[t]=dm[t]+eta*dsd[t];
+      const l2=sumLL(c,mix,beta,null,0,n); if(l2>bN.ll) bN={ll:l2,beta,eta};
+    }
+  }
+  out.rl=bRL; out.rlp=bP; out.bayes=bB; out.bayesn=bN;
+  const ln=Math.log(n);
+  for(const m of MODELS) out[m.id].bic=-2*out[m.id].ll+m.k*ln;
+  out.chanceBIC=-2*n*Math.log(.5);              // 0-parameter coin-flip baseline
+  return out;
+}
+
+const fitCache=new Map();
+function analyze(p){
+  const c=[...p.c].map(Number), r=[...p.r].map(Number), n=c.length;
+  let wins=0,stayW=0,nW=0,shiftL=0,nL=0,better=0;
+  for(let t=0;t<n;t++){
+    wins+=r[t]; if(c[t]===betterArm(p.good,t,p.revAt)) better++;
+    if(t>0){ if(r[t-1]){nW++; if(c[t]===c[t-1]) stayW++;} else {nL++; if(c[t]!==c[t-1]) shiftL++;} }
+  }
+  const out={n,wins,better:n?better/n:null,stayWin:nW?stayW/nW:null,shiftLoss:nL?shiftL/nL:null};
+  if(n>=10){
+    const key=p.c+'|'+p.r;
+    let f=fitCache.get(key);
+    if(!f){ f=fitAll(c,r); fitCache.set(key,f); if(fitCache.size>3000) fitCache.clear(); }
+    const ranked=MODELS.map(m=>({id:m.id,bic:f[m.id].bic})).sort((a,b)=>a.bic-b.bic);
+    out.fits=f; out.model=ranked[0].id; out.dBIC=ranked[1].bic-ranked[0].bic;
+    out.params=f[out.model];
+    out.chance=f.chanceBIC<=ranked[0].bic;     // no model beats a coin flip
+  }
+  return out;
+}
+
+/* ===================== simulated strategies ===================== */
+// Benchmarks: each model at typical parameter values, plus two simple heuristics.
+const STRATS=[
+  {id:'random', name:'Random',                         col:'var(--muted)'},
+  {id:'wsls',   name:'Win-stay / lose-shift',          col:'var(--gold)'},
+  {id:'rl',     name:'RL (α .4, β 8)',                 col:'var(--m1)', P:{alpha:.4,beta:8}},
+  {id:'rlp',    name:'RL + persev. (α .4, β 8, κ 1)',  col:'var(--m2)', P:{alpha:.4,beta:8,kappa:1}},
+  {id:'bayes',  name:'Bayes (β 8)',                    col:'var(--m3)', P:{beta:8}},
+  {id:'bayesn', name:'Bayes + novelty (β 8, η 1.5)',   col:'var(--m4)', P:{beta:8,eta:1.5}},
+];
+let shown=new Set(['random','rl','rlp','bayes','bayesn']);
+// Run one simulated player on the configured task.
+function simulate(id,P,C,good){
+  const c=[],r=[]; const st=newState();
+  for(let t=0;t<C.n;t++){
+    let ch;
+    if(id==='random') ch=Math.random()<.5?1:0;
+    else if(id==='wsls') ch=t===0?(Math.random()<.5?1:0):(r[t-1]?c[t-1]:1-c[t-1]);
+    else ch=Math.random()<1/(1+Math.exp(-logitB(id,st,P)))?1:0;
+    const rw=Math.random()<(ch===betterArm(good,t,C.revAt)?C.pA:C.pB)?1:0;
+    c.push(ch); r.push(rw); learn(st,ch,rw,P||{});
+  }
+  return {c,r};
+}
+let simCache={key:'',curves:{},rates:{}};
+function runSims(){
+  const key=[cfg.n,cfg.pA,cfg.pB,cfg.revAt].join();
+  if(simCache.key===key) return simCache;
+  const N=2000, curves={}, rates={};
+  for(const s of STRATS){
+    const acc=new Float64Array(cfg.n); let tot=0;
+    for(let i=0;i<N;i++){const good=i%2; const {c,r}=simulate(s.id,s.P,cfg,good);
+      for(let t=0;t<cfg.n;t++){ if(c[t]===betterArm(good,t,cfg.revAt)) acc[t]++; tot+=r[t]; }}
+    curves[s.id]=Array.from(acc,v=>v/N); rates[s.id]=tot/(N*cfg.n);
+  }
+  simCache={key,curves,rates}; return simCache;
+}
+
+/* ===================== code encoding (fallback) ===================== */
+const B64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+function encode(p){
+  let s=''; for(let t=0;t<p.c.length;t+=3){let v=0;for(let k=0;k<3;k++){const i=t+k; const bits=i<p.c.length?(+p.c[i])*2+(+p.r[i]):0; v=v*4+bits;} s+=B64[v];}
+  const nm=(p.name||'anon').replace(/[~\s]+/g,'_').slice(0,20);
+  return [nm,p.c.length,Math.round(p.pA*100),Math.round(p.pB*100),p.revAt,p.good,s].join('~');
+}
+function decode(line){
+  const f=line.trim().split('~'); if(f.length!==7) return null;
+  const [nm,n,pa,pb,rev,good,s]=f; const N=+n; let c='',r='';
+  for(const ch of s){let v=B64.indexOf(ch); if(v<0) return null; const tri=[(v>>4)&3,(v>>2)&3,v&3]; for(const b of tri){ if(c.length<N){c+=(b>>1);r+=(b&1);} }}
+  if(c.length!==N) return null;
+  return {name:nm.replace(/_/g,' '),c,r,pA:pa/100,pB:pb/100,revAt:+rev,good:+good,n:N,done:true,round:cfg.round,src:'code'};
+}
+
+/* ===================== live sync (Firebase Realtime Database) ===================== */
+// Data layout:  rooms/<ROOM>/config               {n,pA,pB,revAt,round}
+//               rooms/<ROOM>/plays/<round>/<pid>  {name,c,r,good,...}  c/r = strings of 0/1
+let db=null, roomRef=null, playsRef=null;
+const canAdmin=true;
+const players=new Map();
+const demoPlayers=new Map(), codePlayers=new Map();
+function makePid(){
+  let id=null; try{id=localStorage.getItem('bandit-pid')}catch(e){}
+  if(!id){ id='p'+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); try{localStorage.setItem('bandit-pid',id)}catch(e){} }
+  return id;
+}
+const myId=makePid();
+let lastUpd=null, connOK=null;
+function setLive(){
+  const box=document.getElementById('live'), txt=document.getElementById('liveTxt');
+  let st='off', msg='Offline · no live sync';
+  if(db){
+    if(connOK===false){st='down';msg='Reconnecting…';}
+    else if(connOK===null){st='wait';msg='Connecting…';}
+    else if(lastUpd===null){st='live';msg='LIVE · waiting for first tap';}
+    else {const sec=Math.round((Date.now()-lastUpd)/1000); st='live';
+      msg='LIVE · last tap '+(sec<2?'just now':sec<60?sec+'s ago':Math.floor(sec/60)+' min ago');}
+  }
+  box.dataset.state=st;
+  if(st==='live'&&msg.startsWith('LIVE')){txt.innerHTML='';const b=document.createElement('b');b.textContent='LIVE';txt.append(b,msg.slice(4));}
+  else txt.textContent=msg;
+}
+function pingLive(){const d=document.getElementById('liveDot'); d.classList.remove('ping'); void d.offsetWidth; d.classList.add('ping');}
+setInterval(setLive,1000);
+
+function boot(){
+  route(); window.addEventListener('hashchange',route); setLive();
+  const configured=FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL;
+  if(!configured || !window.firebase){
+    db=null;
+    setSync(configured?'Couldn’t reach the class server. You can still play; you’ll get a results code at the end.'
+                      :'Offline mode: you can still play; you’ll get a results code at the end.');
+    document.getElementById('startBtn').disabled=false; teachStatus(); return;
+  }
+  try{ firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); roomRef=db.ref('rooms/'+ROOM); }
+  catch(e){ db=null; setSync('Live sync failed to start. You can still play offline.'); document.getElementById('startBtn').disabled=false; teachStatus(); return; }
+  setSync('Connecting…');
+  const timer=setTimeout(()=>{teachStatus('Still waiting for the class server… check the databaseURL in the config.');document.getElementById('startBtn').disabled=false},10000);
+  db.ref('.info/connected').on('value',s=>{ connOK=!!s.val(); setLive(); if(game&&!game.local) setSync(s.val()?'Connected. Your choices stream to the class dashboard.':'Reconnecting… your choices are saved and will send when you’re back online.'); });
+  roomRef.child('config').on('value',s=>{
+    clearTimeout(timer); document.getElementById('startBtn').disabled=false;
+    setSync('Connected. Your choices stream to the class dashboard.');
+    const d=s.val(); const prev=cfg.round;
+    if(d) cfg={...DEF,...d};
+    fillCfgInputs(); teachStatus();
+    if(d && prev!==cfg.round){ if(game && !game.local) resetGame(); if(playsRef) subscribePlays(); }
+    renderTeach();
+  },e=>{clearTimeout(timer);document.getElementById('startBtn').disabled=false;teachStatus('Could not read the session settings ('+(e&&e.code||e)+'). Check the database rules in README.md.')});
+}
+// Only the dashboard downloads everyone's plays; phones never do.
+function subscribePlays(){
+  if(!roomRef) return;
+  if(playsRef) playsRef.off();
+  playsRef=roomRef.child('plays/'+cfg.round);
+  playsRef.on('value',s=>{
+    const first=!playsRef.__seen; playsRef.__seen=true;
+    players.clear(); const v=s.val()||{};
+    let newest=0; for(const k in v) if(v[k]){ players.set(k,{...v[k],c:v[k].c||'',r:v[k].r||''}); newest=Math.max(newest,v[k].t||0); }
+    if(!first){ lastUpd=Date.now(); pingLive(); }
+    else if(Object.keys(v).length) lastUpd=Date.now()-Math.max(0,Date.now()-newest);
+    setLive(); scheduleTeach();
+  },e=>teachStatus('Could not read student data ('+(e&&e.code||e)+').'));
+}
+function setSync(t){['joinSync','gameSync','endSync'].forEach(id=>document.getElementById(id).textContent=t)}
+function teachStatus(msg){
+  const el=document.getElementById('teachStatus');
+  if(msg){el.textContent=msg;return}
+  if(!db) el.textContent='Offline: no Firebase config yet. The simulated preview and pasted codes still work.';
+  else el.textContent='Live · room “'+ROOM+'” · round '+cfg.round+' · '+cfg.n+' trials · '+cfg.pA+' vs '+cfg.pB+(cfg.revAt?' · reversal at trial '+cfg.revAt:' · no reversal');
+  document.getElementById('roundLbl').textContent=db?'Current round: '+cfg.round:'';
+  document.getElementById('newRound').textContent=db?'Start new round':'Apply settings (local only)';
+}
+
+/* ===================== routing ===================== */
+function route(){
+  const h=location.hash.replace('#','');
+  const teach=h==='teach';
+  document.getElementById('play').hidden=teach;
+  document.getElementById('teach').hidden=!teach;
+  if(teach){ if(db&&!playsRef) subscribePlays(); renderTeach(); }
+}
+
+/* ===================== student game ===================== */
+let game=null, busy=false, writeInFlight=false, writePending=false;
+function resetGame(){
+  game=null;
+  document.getElementById('joinCard').hidden=false;
+  document.getElementById('gameArea').hidden=true;
+  document.getElementById('endCard').hidden=true;
+}
+function startGame(){
+  const name=document.getElementById('nick').value.trim()||'Player';
+  try{localStorage.setItem('bandit-nick',name)}catch(e){}
+  game={name,c:'',r:'',n:cfg.n,pA:cfg.pA,pB:cfg.pB,revAt:cfg.revAt,good:Math.random()<.5?1:0,round:cfg.round,done:false};
+  document.getElementById('joinCard').hidden=true;
+  document.getElementById('gameArea').hidden=false;
+  document.getElementById('endCard').hidden=true;
+  document.getElementById('hist').innerHTML='';
+  drawHud(); pushWrite();
+}
+function drawHud(){
+  const t=game.c.length;
+  document.getElementById('score').textContent=[...game.r].filter(x=>x==='1').length;
+  document.getElementById('trialLbl').textContent=Math.min(t+1,game.n)+' / '+game.n;
+  document.getElementById('prog').style.width=(100*t/game.n)+'%';
+}
+function choose(arm){
+  if(!game||busy||game.done) return;
+  busy=true;
+  const t=game.c.length;
+  const p=arm===betterArm(game.good,t,game.revAt)?game.pA:game.pB;
+  const win=Math.random()<p?1:0;
+  game.c+=arm; game.r+=win;
+  const btn=document.getElementById(arm?'armB':'armA'), other=document.getElementById(arm?'armA':'armB');
+  other.classList.add('dim');
+  const f=document.createElement('div'); f.className='flash'; f.textContent=win?'🪙':'–'; f.setAttribute('aria-live','polite'); btn.appendChild(f);
+  const h=document.createElement('i'); h.style.background=win?'var(--gold)':'var(--line)'; h.style.outline='1px solid '+(arm?'var(--armB)':'var(--armA)'); document.getElementById('hist').appendChild(h);
+  drawHud();
+  if(game.c.length>=game.n) game.done=true;
+  pushWrite();
+  setTimeout(()=>{f.remove();other.classList.remove('dim');busy=false; if(game&&game.done) endGame();},550);
+}
+async function pushWrite(){
+  if(!db||!game||game.local) return;
+  if(writeInFlight){writePending=true;return}
+  writeInFlight=true;
+  try{ const {local,...data}=game; await roomRef.child('plays/'+game.round+'/'+myId).set({...data,t:Date.now()}); }
+  catch(e){ setSync('Couldn’t save to the class dashboard ('+(e&&e.code||'error')+'). You’ll get a results code at the end.'); game.local=true; }
+  writeInFlight=false;
+  if(writePending){writePending=false;pushWrite();}
+}
+function endGame(){
+  document.getElementById('gameArea').hidden=true;
+  document.getElementById('endCard').hidden=false;
+  const a=analyze(game);
+  document.getElementById('endScore').textContent=a.wins+' coins in '+a.n+' trials';
+  const style=!a.model?'':a.chance?'Your choices look close to random. That’s pure exploration.':{
+    rl:'You behaved like a reinforcement learner: you kept a running value for each machine and nudged it after every outcome.',
+    rlp:'You learned from outcomes, and you also had a habit of repeating your last choice no matter what happened.',
+    bayes:'You behaved like a careful statistician: you weighed all the evidence for each machine, not just recent outcomes.',
+    bayesn:'You weighed the evidence and were drawn to the machine you knew least about. That’s directed exploration.'}[a.model];
+  document.getElementById('endStyle').textContent=style+' You picked the better machine on '+Math.round(100*a.better)+'% of trials.';
+  const synced=db&&myId&&!game.local;
+  document.getElementById('codeBox').hidden=!!synced;
+  document.getElementById('codeTxt').textContent=encode(game);
+}
+
+/* ===================== instructor ===================== */
+let teachTimer=null;
+function scheduleTeach(){ if(teachTimer) return; teachTimer=setTimeout(()=>{teachTimer=null;renderTeach()},400) }
+function fillCfgInputs(){
+  document.getElementById('cfgN').value=cfg.n; document.getElementById('cfgPA').value=cfg.pA;
+  document.getElementById('cfgPB').value=cfg.pB; document.getElementById('cfgRev').value=cfg.revAt;
+}
+function readCfgInputs(){
+  const n=clamp(Math.round(+document.getElementById('cfgN').value||60),10,200);
+  return {n,pA:clamp(+document.getElementById('cfgPA').value,0,1),pB:clamp(+document.getElementById('cfgPB').value,0,1),
+    revAt:clamp(Math.round(+document.getElementById('cfgRev').value||0),0,n-1)};
+}
+function currentPlayers(){
+  const list=[];
+  for(const [id,p] of players) if(p.round===cfg.round && p.c!=null) list.push({id,...p});
+  for(const [id,p] of codePlayers) list.push({id,...p});
+  for(const [id,p] of demoPlayers) list.push({id,...p,demo:true});
+  return list;
+}
+let lastAnalysis=new Map();
+function renderTeach(){
+  if(document.getElementById('teach').hidden) return;
+  const sims=runSims();
+  // Refit at most ~120 ms of students per redraw; the rest show their previous fit and catch up next redraw.
+  const t0=performance.now(); let deferred=false;
+  const list=currentPlayers().map(p=>{
+    const key=p.c+'|'+p.r, prev=lastAnalysis.get(p.id);
+    if(prev&&prev.key===key) return {...p,a:prev.a};
+    if(performance.now()-t0>120 && prev && !fitCache.has(key)){ deferred=true; return {...p,a:prev.a,stale:true}; }
+    const a=analyze(p); lastAnalysis.set(p.id,{key,a}); return {...p,a};
+  });
+  if(deferred) scheduleTeach();
+  const done=list.filter(p=>p.a.n>=p.n).length;
+  document.getElementById('sPlayers').textContent=list.length;
+  document.getElementById('sDone').textContent=list.length?done+' finished':'';
+  const totT=list.reduce((s,p)=>s+p.a.n,0), totW=list.reduce((s,p)=>s+p.a.wins,0);
+  const totB=list.reduce((s,p)=>s+(p.a.better||0)*p.a.n,0);
+  document.getElementById('sRate').textContent=totT?(totW/totT).toFixed(2):'–';
+  document.getElementById('sRateCmp').textContent='Simulated RL '+sims.rates.rl.toFixed(2)+' · Bayes '+sims.rates.bayes.toFixed(2)+' · random '+sims.rates.random.toFixed(2);
+  document.getElementById('sBest').textContent=totT?Math.round(100*totB/totT)+'%':'–';
+  const counts={};list.forEach(p=>{if(p.a.model){const k=p.a.chance?'Chance':MODEL_BY_ID[p.a.model].name; counts[k]=(counts[k]||0)+1}});
+  document.getElementById('sMix').textContent=Object.keys(counts).length?Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+' '+v).join(' · '):'–';
+  drawCurve(list,sims); drawWSLS(list); drawTable(list);
+}
+const NS='http://www.w3.org/2000/svg';
+function el(tag,attrs,parent,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;parent&&parent.appendChild(e);return e}
+function drawCurve(list,sims){
+  const svg=document.getElementById('curve'); svg.innerHTML='';
+  const W=620,H=300,L=40,R=12,T=12,B=34, n=cfg.n;
+  const x=t=>L+(W-L-R)*(n<=1?0:t/(n-1)), y=v=>T+(H-T-B)*(1-v);
+  for(const v of [0,.25,.5,.75,1]){el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'var(--line)','stroke-width':v===.5?1:.6,'stroke-dasharray':v===.5?'4 3':''},svg);el('text',{x:L-6,y:y(v)+3,'text-anchor':'end'},svg,v.toFixed(2))}
+  const step=n>100?20:n>40?10:5;
+  for(let t=0;t<n;t+=step) el('text',{x:x(t),y:H-B+16,'text-anchor':'middle'},svg,t+1);
+  el('text',{x:(L+W-R)/2,y:H-4,'text-anchor':'middle'},svg,'trial');
+  if(cfg.revAt>0){el('line',{x1:x(cfg.revAt-.5),x2:x(cfg.revAt-.5),y1:T,y2:H-B,stroke:'var(--gold)','stroke-width':1.5},svg);el('text',{x:x(cfg.revAt-.5)+4,y:T+10},svg,'reversal')}
+  const path=(arr,col,w,op)=>{let d='';arr.forEach((v,t)=>{if(v==null)return;d+=(d?'L':'M')+x(t).toFixed(1)+','+y(v).toFixed(1)});if(d)el('path',{d,fill:'none',stroke:col,'stroke-width':w,'stroke-opacity':op,'stroke-linejoin':'round'},svg)};
+  for(const s of STRATS) if(shown.has(s.id)) path(sims.curves[s.id],s.col,1.8,.85);
+  // class curve, 3-trial moving average
+  const acc=new Array(n).fill(0),cnt=new Array(n).fill(0);
+  list.forEach(p=>{for(let t=0;t<p.c.length&&t<n;t++){cnt[t]++;if(+p.c[t]===betterArm(p.good,t,p.revAt))acc[t]++}});
+  const raw=acc.map((v,t)=>cnt[t]?v/cnt[t]:null);
+  const sm=raw.map((v,t)=>{let s=0,k=0;for(let j=t-1;j<=t+1;j++)if(raw[j]!=null){s+=raw[j];k++}return v==null?null:s/k});
+  path(sm,'var(--ink)',3.2,1);
+}
+function drawWSLS(list){
+  const svg=document.getElementById('wsls'); svg.innerHTML='';
+  const W=360,H=330,L=40,R=12,T=12,B=40;
+  const x=v=>L+(W-L-R)*v, y=v=>T+(H-T-B)*(1-v);
+  el('rect',{x:x(.5),y:y(1),width:x(1)-x(.5),height:y(.5)-y(1),fill:'var(--armB)','fill-opacity':.08},svg);
+  for(const v of [0,.25,.5,.75,1]){
+    el('line',{x1:x(v),x2:x(v),y1:T,y2:H-B,stroke:'var(--line)','stroke-width':.6},svg);
+    el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'var(--line)','stroke-width':.6},svg);
+    el('text',{x:x(v),y:H-B+14,'text-anchor':'middle'},svg,v);
+    el('text',{x:L-6,y:y(v)+3,'text-anchor':'end'},svg,v);
+  }
+  el('text',{x:(L+W-R)/2,y:H-6,'text-anchor':'middle'},svg,'P(stay | win)');
+  const yl=el('text',{x:12,y:(T+H-B)/2,'text-anchor':'middle',transform:`rotate(-90 12 ${(T+H-B)/2})`},svg,'P(shift | loss)');
+  el('text',{x:x(.97),y:y(.97)+10,'text-anchor':'end'},svg,'WSLS');
+  el('circle',{cx:x(.5),cy:y(.5),r:3,fill:'none',stroke:'var(--muted)'},svg);
+  el('text',{x:x(.5)+6,y:y(.5)-6},svg,'random');
+  const colFor=a=>!a.model||a.chance?'var(--muted)':MODEL_BY_ID[a.model].col;
+  list.forEach(p=>{ if(p.a.stayWin==null||p.a.shiftLoss==null) return;
+    const c=el('circle',{cx:x(p.a.stayWin),cy:y(p.a.shiftLoss),r:6,fill:colFor(p.a),'fill-opacity':.75,stroke:'var(--surface)','stroke-width':1.5},svg);
+    el('title',{},c,(p.name||'Player')+': '+(!p.a.model?'too few trials':p.a.chance?'chance-level':MODEL_BY_ID[p.a.model].name));
+  });
+}
+function fmt(v,d=2){return v==null?'–':v.toFixed(d)}
+function drawTable(list){
+  const tb=document.getElementById('tbody'); tb.innerHTML='';
+  if(!list.length){tb.innerHTML='<tr><td colspan="12" class="muted">No players yet. Share this page’s link and have students open the Player view.</td></tr>';return}
+  list.sort((a,b)=>b.a.wins-a.a.wins);
+  for(const p of list){
+    const tr=document.createElement('tr'); const a=p.a, P=a.params||{};
+    const has=k=>a.model&&MODEL_BY_ID[a.model].params.includes(k);
+    const label=(p.name||'Player')+(p.demo?(p.trueModel?' (sim: '+MODEL_BY_ID[p.trueModel].name+')':' (sim: random)'):'')+(p.src==='code'?' (code)':'');
+    const cells=[[label,''],[a.n+'/'+p.n,'num'],[a.wins,'num'],[a.better==null?'–':Math.round(100*a.better)+'%','num'],
+      [fmt(a.stayWin),'num'],[fmt(a.shiftLoss),'num'],[null,''],[a.dBIC!=null?fmt(a.dBIC,1):'–','num'],
+      [has('alpha')?fmt(P.alpha):'–','num'],[has('beta')?fmt(P.beta,1):'–','num'],[has('kappa')?fmt(P.kappa):'–','num'],[has('eta')?fmt(P.eta):'–','num']];
+    cells.forEach(([v,cls],i)=>{const td=document.createElement('td');if(cls)td.className=cls;
+      if(i===6){const s=document.createElement('span');s.className='pill';
+        if(!a.model){s.className='pill p-n';s.textContent='needs 10 trials'}
+        else{const m=MODEL_BY_ID[a.model]; const col=a.chance?'var(--muted)':m.col;
+          s.textContent=a.chance?'Chance-level':m.name; s.style.color=col; s.style.background='color-mix(in srgb,'+col+' 16%,transparent)';
+          s.title='BIC  '+MODELS.map(x=>x.name+' '+a.fits[x.id].bic.toFixed(1)).join(' · ')+' · coin flip '+a.fits.chanceBIC.toFixed(1);}
+        td.appendChild(s); if(p.stale) td.append(' …');}
+      else td.textContent=v;
+      tr.appendChild(td)});
+    tb.appendChild(tr);
+  }
+}
+function buildChips(){
+  const key=document.getElementById('dotKey'); key.innerHTML='';
+  for(const m of [...MODELS,{name:'Chance / <10 trials',col:'var(--muted)'}]){const c=document.createElement('span');c.className='chip';
+    const sw=document.createElement('span');sw.className='sw';sw.style.cssText='width:9px;height:9px;border-radius:50%;background:'+m.col;c.append(sw,m.name);key.appendChild(c)}
+  const box=document.getElementById('stratChips'); box.innerHTML='';
+  for(const s of STRATS){const b=document.createElement('button');b.className='chip';b.setAttribute('aria-pressed',shown.has(s.id));
+    const sw=document.createElement('span');sw.className='sw';sw.style.background=s.col;b.append(sw,s.name);
+    b.onclick=()=>{shown.has(s.id)?shown.delete(s.id):shown.add(s.id);b.setAttribute('aria-pressed',shown.has(s.id));renderTeach()};box.appendChild(b)}
+}
+// Simulated class for rehearsal: 5 students from each model with random parameters, plus 4 random clickers.
+// The table shows each one's true generating model, so you can see how well the fits recover it.
+function makeDemo(){
+  demoPlayers.clear(); fitCache.clear(); lastAnalysis.clear();
+  const names=['Ava','Ben','Chen','Dani','Eli','Fatima','Gus','Hana','Ivan','Jo','Kai','Lena','Milo','Nia','Omar','Priya','Quinn','Rosa','Sam','Tara','Uma','Vic','Wes','Yara'];
+  const U=(a,b)=>a+Math.random()*(b-a);
+  names.forEach((nm,i)=>{
+    const id=i<20?MODELS[i%4].id:'random';
+    const P={alpha:U(.2,.8),beta:U(4,12),kappa:U(.5,2),eta:U(1,3)};
+    const good=Math.random()<.5?1:0; const {c,r}=simulate(id,P,cfg,good);
+    demoPlayers.set('demo'+i,{name:nm,c:c.join(''),r:r.join(''),good,n:cfg.n,pA:cfg.pA,pB:cfg.pB,revAt:cfg.revAt,round:cfg.round,done:true,trueModel:id==='random'?null:id});
+  });
+  document.getElementById('clearDemo').hidden=false;
+  renderTeach();
+}
+
+/* ===================== wiring ===================== */
+try{const n=localStorage.getItem('bandit-nick');if(n)document.getElementById('nick').value=n}catch(e){}
+document.getElementById('startBtn').onclick=startGame;
+document.getElementById('armA').onclick=()=>choose(0);
+document.getElementById('armB').onclick=()=>choose(1);
+document.getElementById('againBtn').onclick=resetGame;
+document.getElementById('copyCode').onclick=async e=>{const t=document.getElementById('codeTxt').textContent;
+  try{await navigator.clipboard.writeText(t);e.target.textContent='Copied'}catch(_){const r=document.createRange();r.selectNodeContents(document.getElementById('codeTxt'));const s=getSelection();s.removeAllRanges();s.addRange(r);e.target.textContent='Selected. Copy it now.'}};
+document.getElementById('demoBtn').onclick=makeDemo;
+document.getElementById('clearDemo').onclick=()=>{demoPlayers.clear();document.getElementById('clearDemo').hidden=true;renderTeach()};
+document.getElementById('newRound').onclick=async()=>{
+  const v=readCfgInputs();
+  if(db&&canAdmin){
+    const btn=document.getElementById('newRound');btn.disabled=true;
+    try{await roomRef.child('config').set({...v,round:(cfg.round||0)+1,t:Date.now()});demoPlayers.clear();codePlayers.clear();document.getElementById('clearDemo').hidden=true}
+    catch(e){teachStatus('Could not start a new round ('+(e&&e.code||'error')+').')}
+    btn.disabled=false;
+  } else { cfg={...cfg,...v}; if(demoPlayers.size) makeDemo(); teachStatus(); renderTeach(); }
+};
+document.getElementById('addCodes').onclick=()=>{
+  let ok=0,bad=0;
+  document.getElementById('pasteBox').value.split(/\n+/).filter(l=>l.trim()).forEach(l=>{const p=decode(l);if(p){codePlayers.set('code:'+l.trim(),p);ok++}else bad++});
+  document.getElementById('pasteMsg').textContent=ok+' added'+(bad?', '+bad+' not recognized':'');
+  renderTeach();
+};
+function joinUrl(){ return location.origin+location.pathname+(ROOM!=='main'?'?room='+encodeURIComponent(ROOM):'')+'#play'; }
+document.getElementById('qrBtn').onclick=()=>{
+  const url=joinUrl(), box=document.getElementById('qr'); box.innerHTML='';
+  document.getElementById('qrUrl').textContent=url;
+  if(window.QRCode) new QRCode(box,{text:url,width:512,height:512,correctLevel:QRCode.CorrectLevel.M});
+  else box.textContent='(QR library didn’t load; share the link instead)';
+  document.getElementById('qrWarn').textContent= location.protocol==='file:'?'This page is opened from your own computer, so phones can’t reach this link. Host it first (see README.md).':
+    (!db?'Live sync is off, so results won’t reach this dashboard. Students will get codes instead.':'');
+  document.getElementById('qrOverlay').hidden=false;
+};
+document.getElementById('qrClose').onclick=()=>document.getElementById('qrOverlay').hidden=true;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.getElementById('qrOverlay').hidden=true});
+buildChips(); fillCfgInputs();
+document.getElementById('startBtn').disabled=true;
+boot();
+</script>
+
+</body>
+</html>
